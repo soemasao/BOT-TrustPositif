@@ -1,0 +1,21 @@
+# Python Virtual Environment
+venv/
+
+# Cache dan file sementara
+__pycache__/
+*.pyc
+
+# Data sensitif dan data pengguna
+# Folder user dan semua isinya akan diabaikan
+user/
+
+# Screenshot hasil bot
+nawala_check.png
+
+# File konfigurasi sensitif (Token Bot)
+.env
+
+# File yang dihasilkan secara lokal
+src/chromedriver.exe
+
+.DS_Store
