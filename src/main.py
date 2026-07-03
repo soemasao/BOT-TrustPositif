@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import time
 import asyncio
 import glob
 import json
@@ -33,25 +34,21 @@ if not TOKEN:
             
         print(">> Sedang memvalidasi TOKEN ke Telegram... Mohon tunggu.")
         
-        # Pengetesan Token Langsung ke API Telegram
         try:
-            # Kita kirim permintaan sederhana ke API Telegram 'getMe'
             test_url = f"https://api.telegram.org/bot{input_token}/getMe"
             response = requests.get(test_url, timeout=10).json()
             
             if response.get("ok"):
-                # Kita ambil 'username' dari hasil response API Telegram
                 bot_username = response["result"]["username"]
                 print(f">> Berhasil! Terhubung dengan Bot: @{bot_username}")
                 
-                # JIKA VALID, baru simpan ke .env
                 with open(".env", "a") as f:
                     f.write(f"\nTOKEN={input_token}\n")
                 
                 TOKEN = input_token
                 print("✓ TOKEN disimpan permanen!")
                 print("="*40 + "\n")
-                break # Keluar dari perulangan
+                break
             else:
                 print(">> Error : TOKEN SALAH atau TIDAK VALID!.")
                 print(">> Info  : Untuk TOKEN dan kendala bisa chat ke Telegram @soemasao.")
@@ -61,25 +58,15 @@ if not TOKEN:
             print(">> Pastikan internet kamu lancar ya!. ")
 # ------------------------------------------------------
 
-# Tentukan jalur dasar, yaitu satu folder di atas lokasi skrip ini
-# Karena main.py berada di src/, ini akan mengarah ke folder utama
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-# Tentukan folder tempat file user disimpan
 DATA_FOLDER = os.path.join(BASE_DIR, "user")
-# Gabungkan dengan nama file dasar
 DOMAIN_FILE_BASE = os.path.join(DATA_FOLDER, "domains")
 SCHEDULE_FILE_BASE = os.path.join(DATA_FOLDER, "schedule")
-# Interval pengecekan otomatis dalam detik (1 jam)
 CHECK_INTERVAL_SECONDS = 3600
 
 # --- FUNGSI UNTUK MENGELOLA FILE DOMAIN PER PENGGUNA ---
 
 def get_domain_filename(chat_id, username=None):
-    """
-    Membuat nama file unik untuk setiap chat_id, termasuk username untuk kemudahan
-    identifikasi manual.
-    """
     if username:
         safe_username = "".join(c for c in username if c.isalnum() or c in ('_', '-')).rstrip()
         return os.path.join(DATA_FOLDER, f"domains_{safe_username}_{chat_id}.txt")
@@ -87,11 +74,9 @@ def get_domain_filename(chat_id, username=None):
         return os.path.join(DATA_FOLDER, f"domains_{chat_id}.txt")
 
 def load_domains(chat_id, username=None):
-    """Membaca daftar domain dari file untuk chat_id tertentu."""
     filename = get_domain_filename(chat_id, username)
     try:
         if not os.path.exists(filename):
-            # Mencoba mencari file lama jika format baru tidak ditemukan
             filename_old = os.path.join(DATA_FOLDER, f"domains_{chat_id}.txt")
             if os.path.exists(filename_old):
                 os.rename(filename_old, filename)
@@ -104,9 +89,7 @@ def load_domains(chat_id, username=None):
         return []
 
 def save_domains(domains, chat_id, username=None):
-    """Menyimpan daftar domain ke file untuk chat_id tertentu."""
     filename = get_domain_filename(chat_id, username)
-    # Pastikan direktori ada sebelum menulis file
     os.makedirs(DATA_FOLDER, exist_ok=True)
     try:
         with open(filename, "w") as f:
@@ -118,7 +101,6 @@ def save_domains(domains, chat_id, username=None):
 # --- FUNGSI BARU: MENGELOLA FILE JADWAL PENGECETAN OTOMATIS ---
 
 def get_schedule_filename(chat_id, username=None):
-    """Membuat nama file jadwal unik untuk setiap chat_id."""
     if username:
         safe_username = "".join(c for c in username if c.isalnum() or c in ('_', '-')).rstrip()
         return os.path.join(DATA_FOLDER, f"schedule_{safe_username}_{chat_id}.json")
@@ -126,7 +108,6 @@ def get_schedule_filename(chat_id, username=None):
         return os.path.join(DATA_FOLDER, f"schedule_{chat_id}.json")
 
 def save_schedule(chat_id, username, start_time):
-    """Menyimpan waktu mulai job ke file JSON."""
     filename = get_schedule_filename(chat_id, username)
     os.makedirs(DATA_FOLDER, exist_ok=True)
     try:
@@ -136,7 +117,6 @@ def save_schedule(chat_id, username, start_time):
         print(f"Error menulis ke file jadwal {filename}: {e}")
 
 def load_schedule(chat_id, username):
-    """Membaca waktu mulai job dari file JSON."""
     filename = get_schedule_filename(chat_id, username)
     try:
         if os.path.exists(filename):
@@ -149,26 +129,21 @@ def load_schedule(chat_id, username):
         return None
 
 def delete_schedule_file(chat_id, username):
-    """Menghapus file jadwal."""
     filename = get_schedule_filename(chat_id, username)
     if os.path.exists(filename):
         os.remove(filename)
 
 # --- FUNGSI UNTUK LOGGING YANG LEBIH RAPI ---
 def log_message(username, message):
-    """Fungsi pembantu untuk mencetak pesan log dengan format yang konsisten."""
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(f"[{timestamp}] User: {username} | {message}")
 
-# Fungsi inti yang menjalankan proses web scraping dan screenshot
 async def _perform_domain_check(domain_names_list, username, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Melakukan pengecekan domain Nawala menggunakan Selenium dan mengirimkan screenshot.
-    Fungsi ini dipanggil oleh perintah manual (/cek) dan pengecekan otomatis.
-    """
     driver = None
+    # Nama file unik untuk mencegah bentrok dan menimpa file
+    screenshot_filename = f"nawala_check_{username}_{int(time.time())}.png"
+    
     try:
-        # Menggabungkan domain dengan nomor urut
         formatted_domains = [f"{i+1}. {domain}" for i, domain in enumerate(domain_names_list)]
         domain_names_log = "\n".join(formatted_domains)
         
@@ -184,10 +159,7 @@ async def _perform_domain_check(domain_names_list, username, update: Update, con
         
         log_message(username, "Menginisialisasi browser Chrome...")
         
-        # Tentukan jalur ke chromedriver.exe di folder src/
-        driver_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'chromedriver.exe')
-        
-        # Mengandalkan Selenium Manager bawaan (Jauh lebih modern, cepat, dan cross-platform)
+        # Mengandalkan Selenium Manager bawaan (Cross-platform otomatis)
         driver = webdriver.Chrome(options=chrome_options)
         
         website_url = "https://nawala.online"
@@ -209,7 +181,6 @@ async def _perform_domain_check(domain_names_list, username, update: Update, con
         log_message(username, "Menunggu hasil pengecekan (15 detik)...")
         await asyncio.sleep(15) 
         
-        screenshot_filename = "nawala_check.png"
         log_message(username, "Mengambil screenshot...")
         body_element = driver.find_element(By.TAG_NAME, 'body')
         body_element.screenshot(screenshot_filename)
@@ -220,8 +191,6 @@ async def _perform_domain_check(domain_names_list, username, update: Update, con
                 await update.message.reply_photo(photo=InputFile(image_file), caption="Hasil pengecekan domain sudah selesai!")
             else:
                 await context.bot.send_photo(chat_id=context.job.chat_id, photo=InputFile(image_file), caption="Hasil pengecekan otomatis domain sudah selesai!")
-            
-        os.remove(screenshot_filename)
             
     except TimeoutException:
         error_message = "Terjadi error saat mengecek domain. Bot kehabisan waktu saat menunggu elemen di halaman. Coba lagi atau periksa koneksi internetmu."
@@ -256,8 +225,12 @@ async def _perform_domain_check(domain_names_list, username, update: Update, con
         if driver:
             driver.quit()
             log_message(username, "Browser ditutup. Proses pengecekan selesai.")
+        
+        # Memastikan file screenshot selalu dibersihkan, sukses maupun gagal
+        if os.path.exists(screenshot_filename):
+            os.remove(screenshot_filename)
+            log_message(username, f"Sisa file screenshot dibersihkan secara sistem.")
 
-# Fungsi untuk perintah /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_first_name = update.message.from_user.first_name
     username = update.message.from_user.username or f"user_{update.message.from_user.id}"
@@ -272,7 +245,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '- /status untuk melihat status pengecekan otomatis'
     )
     
-# Fungsi untuk perintah /cek (manual)
 async def cek_domain(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.message.from_user.username or f"user_{update.message.from_user.id}"
     log_message(username, "Perintah /cek")
@@ -284,7 +256,6 @@ async def cek_domain(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Sedang mengecek domain:\n**{'\n'.join(domain_names_list)}**\n... Mohon tunggu sebentar.")
     await _perform_domain_check(domain_names_list, username, update, context)
 
-# Fungsi untuk perintah /tambah
 async def tambah_domain(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.message.from_user.username or f"user_{update.message.from_user.id}"
     log_message(username, "Perintah /tambah")
@@ -293,7 +264,6 @@ async def tambah_domain(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     chat_id = update.message.chat_id
-    # Menghilangkan spasi ekstra di awal/akhir setiap domain sebelum diproses
     domains_to_add = [arg.strip().lower() for arg in context.args] 
     domains = load_domains(chat_id, username)
     
@@ -315,7 +285,6 @@ async def tambah_domain(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if is_first_domain_added:
             job_name = f"automatic_check_{chat_id}"
-            # Menyimpan waktu mulai job ke file
             start_time = datetime.now()
             save_schedule(chat_id, username, start_time)
             
@@ -329,7 +298,6 @@ async def tambah_domain(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Domain {skipped_text} sudah ada di daftar dan dilewati.")
 
 
-# Fungsi untuk perintah /hapus
 async def hapus_domain(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.message.from_user.username or f"user_{update.message.from_user.id}"
     log_message(username, "Perintah /hapus")
@@ -337,7 +305,7 @@ async def hapus_domain(update: Update, context: ContextTypes.DEFAULT_TYPE):
     domains = load_domains(chat_id, username)
     if domains:
         save_domains([], chat_id, username)
-        delete_schedule_file(chat_id, username) # Menghapus file jadwal
+        delete_schedule_file(chat_id, username) 
         
         job_name = f"automatic_check_{chat_id}"
         current_jobs = context.job_queue.get_jobs_by_name(job_name)
@@ -349,7 +317,6 @@ async def hapus_domain(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Daftar domain untuk cek otomatis sudah kosong, tidak ada yang perlu dihapus.")
 
 
-# Fungsi untuk perintah /daftar
 async def lihat_daftar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.message.from_user.username or f"user_{update.message.from_user.id}"
     log_message(username, "Perintah /daftar")
@@ -361,7 +328,6 @@ async def lihat_daftar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Daftar domain untuk cek otomatis masih kosong. Gunakan /tambah untuk menambahkannya.")
 
-# Fungsi untuk perintah /status
 async def cek_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.message.from_user.username or f"user_{update.message.from_user.id}"
     log_message(username, "Perintah /status")
@@ -371,7 +337,6 @@ async def cek_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     domains = load_domains(chat_id, username)
     
     if current_jobs:
-        # Pengecekan otomatis aktif
         next_run_time_utc = current_jobs[0].next_run_time
         next_run_time_local = next_run_time_utc + timedelta(hours=7)
         next_run_time_str = next_run_time_local.strftime("%H:%M:%S")
@@ -386,11 +351,9 @@ async def cek_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(status_message)
     else:
-        # Pengecekan otomatis tidak aktif
         await update.message.reply_text("Pengecekan otomatis tidak sedang berjalan. Gunakan perintah /tambah untuk menambahkan domain dan mengaktifkannya.")
 
 
-# Fungsi yang akan dijalankan oleh JobQueue setiap 1 jam
 async def cek_otomatis(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
     username = context.job.data.get('username', f"user_{chat_id}")
@@ -413,7 +376,6 @@ async def cek_otomatis(context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    # Tambahkan job_queue ke ApplicationBuilder
     application = ApplicationBuilder().token(TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
@@ -425,10 +387,8 @@ def main():
     
     print("Mengecek jadwal otomatis yang tersimpan...")
     
-    # Glob sekarang mencari dari BASE_DIR
     file_pattern = os.path.join(DATA_FOLDER, f"domains_*.txt")
     for filename in glob.glob(file_pattern):
-        # Regex untuk mencocokkan nama file yang ada di folder user
         match = re.search(r"domains_(.+)_(\d+)\.txt$", os.path.basename(filename))
         if match:
             username_from_file = match.group(1)
@@ -440,16 +400,13 @@ def main():
             if domains and start_time:
                 job_name = f"automatic_check_{chat_id_from_file}"
                 
-                # Hitung waktu tunda yang diperlukan
                 now = datetime.now()
                 elapsed_time = now - start_time
                 next_check_in_seconds = CHECK_INTERVAL_SECONDS - (elapsed_time.total_seconds() % CHECK_INTERVAL_SECONDS)
                 
-                # Jika waktu tunda negatif (waktu seharusnya sudah lewat), jalankan sekarang
                 if next_check_in_seconds < 0:
                     next_check_in_seconds = 0
                 
-                # Jadwalkan ulang pekerjaan dengan waktu tunda yang sudah dihitung
                 application.job_queue.run_repeating(
                     cek_otomatis, 
                     interval=CHECK_INTERVAL_SECONDS, 
@@ -460,7 +417,6 @@ def main():
                 )
                 print(f"  -> Menjadwalkan ulang pengecekan untuk user: {username_from_file} (Chat ID: {chat_id_from_file})")
             elif domains and not start_time:
-                # Jika file domain ada tapi file jadwal tidak ada, buat jadwal baru
                 print(f"  -> File jadwal tidak ditemukan untuk {username_from_file}. Menjadwalkan ulang dengan waktu saat ini.")
                 job_name = f"automatic_check_{chat_id_from_file}"
                 start_time = datetime.now()
@@ -474,13 +430,10 @@ def main():
                     data={'username': username_from_file}
                 )
 
-
     print("Bot sudah berjalan...")
     application.run_polling()
 
 if __name__ == '__main__':
-    # Secara eksplisit membuat dan mendaftarkan event loop baru 
-    # untuk mengatasi aturan ketat di Python versi terbaru
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
